@@ -1,51 +1,37 @@
-# -*- coding: utf-8 -*-
-import serial
-import glob
+import socket
+import select
 from .kacoparser import KacoRS485Parser
 
-class KacoRS485(object):
+class KacoTCP(object):
     """
-    KacoRS485 can talk to kaco powador rs485 interface
+    KacoTCP can talk to kaco powador rs485 interface via a TCP connection, for example through a Terminal converter
 
     supports:
         * reading current values
     """
 
     waitBeforeRead = 0.7
+    parser = KacoRS485Parser()
 
-    def port_from_wildcard(self, port):
-        port = glob.glob(port)
-        if not port:
-            raise Exception('could not find a valid rs485 port')
-        return port[0]
-
-    def __init__(self,serialPort):
+    def __init__(self, host, port):
         """
-        initalize which serial port we should use
+        initalize and determine which host and port to connect to
 
         example
         ``
-        kaco = KacoRS485('/dev/ttyUSB0')
+        kaco = KacoTCP('192.168.1.1', 23)
         ``
         """
-        if '*' in serialPort:
-            serialPort = self.port_from_wildcard(serialPort)
 
         #create and open serial port
-        self.ser = serial.Serial(
-            port=serialPort,
-            baudrate=9600,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-            bytesize=serial.EIGHTBITS,
-            timeout=0.5
-        )
+        self.socket = socket.create_connection([host, port])
+        self.socket.setblocking(True)
 
     def close(self):
         """
         close serial connection
         """
-        self.ser.close()
+        self.socket.close()
 
     def readInverter(self,inverterNumber):
         """
@@ -69,16 +55,15 @@ class KacoRS485(object):
     def readInverterAndParse(self,inverterNumber):
         answers = self.readInverter(inverterNumber)
 
-        P = KacoRS485Parser()
-
-        print("answers",answers)
+        print("answers", answers)
 
         parsed = []
         for k in answers:
-            item = answers[k]
-            if len(item) == 0:
-                continue
-            parsed.append(P.parse(item,k))
+            lines = answers[k]
+            for line in lines:
+              if len(line) == 0:
+                  continue
+              parsed.append(self.parser.parse(line, k))
 
         #all answers could be empty, what should we do?
         #we could also silently answer an empty dict
@@ -88,7 +73,7 @@ class KacoRS485(object):
 
         #important, set input to empty dict
         #otherwise, we will reuse input from last function call
-        return P.listDictNameToKey(parsed,{})
+        return self.parser.listDictNameToKey(parsed,{})
 
 
     def sendCmdAndRead(self,cmd):
@@ -102,21 +87,23 @@ class KacoRS485(object):
 
         #can only send bytearrays
         bytearr = cmd.encode()
-        self.ser.write(bytearr)
+        self.socket.send(bytearr)
 
-        print("send to rs485",bytearr)
+        print("send to rs485", bytearr)
 
-        #wait some time to let device answer
-        time.sleep(self.waitBeforeRead)
-
-        #read answer
-        #while ser.inWaiting() > 0:
-        #    out += ser.read(1)
-
-        #read answer line
+        # read answer
         answer = []
-        while self.ser.inWaiting() > 0:
-            answer.append(self.ser.readline())
+        while True:
+          ready = select.select([self.socket], [], [], self.waitBeforeRead)
+          if ready[0]:
+            #read answer line
+            answer.extend(self.socket.recv(4096).decode('iso8859-15'))
+          else:
+              break
 
-        return ''.join(answer)
+        return ''.join(answer).split('\n')
 
+if __name__ == '__main__':
+    tcp_reader = KacoTCP('192.168.32.146', 23)
+    print(tcp_reader.readInverterAndParse(1))
+    tcp_reader.close()

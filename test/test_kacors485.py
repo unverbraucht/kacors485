@@ -7,7 +7,8 @@ import os.path
 libpath = os.path.abspath(os.path.join(os.path.dirname(__file__),  os.path.pardir))
 sys.path.append(libpath)
 
-from kacors485.kacors485 import KacoRS485, KacoRS485Parser
+from kacors485.kacors485 import KacoRS485
+from kacors485.kacoparser import KacoRS485Parser
 
 try:
     from unittest import mock
@@ -74,7 +75,7 @@ class TestSerialMethods(unittest.TestCase):
 
         read = k.sendCmdAndRead('question')
 
-        instance.write.assert_called_once_with('question')
+        instance.write.assert_called_once_with(b'question')
 
         self.assertEqual('answer',read)
 
@@ -108,9 +109,8 @@ class TestSerialMethods(unittest.TestCase):
         read = k.readInverter(nr)
 
         expected_calls = [
-                    mock.call('#0'+str(nr)+'0\r\n'),
-                    #mock.call('#0'+str(nr)+'2\r\n'),
-                    mock.call('#0'+str(nr)+'3\r\n'),
+                    mock.call(('#0'+str(nr)+'0\r\n').encode()),
+                    mock.call(('#0'+str(nr)+'3\r\n').encode()),
                 ]
 
         self.assertEqual(instance.write.mock_calls, expected_calls)
@@ -189,7 +189,7 @@ class TestParserMethods(unittest.TestCase):
                 # assert it can be json encoded
                 json.dumps(answer_list)
 
-                self.assertEqual(sorted(item[2]), sorted(answer_list))
+                self.assertEqual(item[2], answer_list)
             except Exception as e:
                 if item[2] is False:
                     # we do not except an answer but exception
